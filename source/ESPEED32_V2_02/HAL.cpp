@@ -20,8 +20,8 @@
   MT6701 mt6701; // magnetic sensor, install MT6701 library by Noran Raskin
 
 #elif defined (TLE493D_MAG)
-  //#define ADDRESS 0x35              // for the A0 derivate
-  #define ADDRESS 0x5D    // for the TLE493 P3B6
+  #define ADDRESS 0x35              // for the A0 derivate
+  //#define ADDRESS 0x5D    // for the TLE493 P3B6
   #include <Wire.h>                 // default I�C library
 
 #endif
@@ -35,7 +35,7 @@ void HAL_InitHW()
   /* Deprecated: no longer using EEPROM library --> now using Preferences.h library for storing NVM data */
   //EEPROM.begin(EEPROM_SIZE);
   /* Setup fo the parameters for serial(debug) communication */ 
-  Serial.begin(115200);      
+  //Serial.begin(115200);      
 
   #if defined (AS5600_MAG) || defined (AS5600L_MAG)
     as5600.begin(4);                        /* Set direction pin */
@@ -49,12 +49,49 @@ void HAL_InitHW()
     mt6701.begin(); /* Wire is initialized by the display already, also sensor is using same I2C wires */
 
   #elif defined (TLE493D_MAG)
-  Wire1.begin(SDA0_PIN,SCL0_PIN,1000000L); // DEbug added for secon I2C
+//https://github.com/Infineon/TLE493D-3DMagnetic-Sensor/issues/29
+  Wire1.begin(SDA0_PIN,SCL0_PIN, 1000000L); // DEbug added for secon I2C
+  // reset sensor
   Wire1.beginTransmission(ADDRESS); // Sensor address
-  Wire1.write(0x0A);             // Register address
-  Wire1.write(0xC6);       
-  Wire1.write(0x02);      
+  Wire1.write(0xFF);             // Register address
   Wire1.endTransmission();
+  Wire1.beginTransmission(ADDRESS); // Sensor address
+  Wire1.write(0xFF);             // Register address
+  Wire1.endTransmission();
+  Wire1.beginTransmission(ADDRESS); // Sensor address
+  Wire1.write(0x00);             // Register address
+  Wire1.endTransmission();
+  Wire1.beginTransmission(ADDRESS); // Sensor address
+  Wire1.write(0x00);             // Register address
+  Wire1.endTransmission();
+  delayMicroseconds(30);
+
+  // write configuration
+  // Register 0x10
+  // DT:7 - temperatur management disabled
+  // AM:6 - angular measurement - bz and temp disabled
+  // TRIG:5:4 - 10: ADC trigger on read after register 0x05
+  // X2:3 - short range sensivity, double adc conversion doubled by longer adc integration time
+  Wire1.beginTransmission(ADDRESS);
+  Wire1.write(0x10);
+  Wire1.write(0b11111000);   
+  Wire1.endTransmission();
+
+  // register 0x11
+  // PR:4 - iic one byte read protocol
+  // CA:3 - collision avoidance, clock stretching in master control mode
+  // INT:2 - interrupt disabled
+  // MODE:1:0 - master control mode
+  Wire1.beginTransmission(ADDRESS);
+  Wire1.write(0x11);
+  Wire1.write(0b00011001);
+  Wire1.endTransmission();
+
+  //   Wire1.beginTransmission(ADDRESS); // Sensor address
+  // Wire1.write(0x0A);             // Register address
+  // Wire1.write(0xC6);       
+  // Wire1.write(0x02);      
+  // Wire1.endTransmission();
   #endif
 
   /* configure motor control PWM functionalitites and attach the channel to the GPIO to be controlled */
@@ -117,17 +154,21 @@ int16_t HAL_ReadTriggerRaw()
     int16_t angle10degXY=-1;// angle in tenth of degree
     int16_t angle10degYZ=-1;// angle in tenth of degree
     int16_t zSign,xSign;
-    uint8_t buf[7];
+    uint8_t buf[30];
+    // After reading 6 Values, new ADC conversion will be started
+    Wire1.requestFrom(ADDRESS, 6);
 
-    Wire1.requestFrom(ADDRESS, 4);
-
-  for (uint8_t i = 0; i < 4; i++) {
+  for (uint8_t i = 0; i < 6; i++) {
     buf[i] = Wire1.read();
   }
 
+  // built 12 bit data 
+  int16_t X = (int16_t)((buf[0] << 8) | ((buf[4] & 0xF0)))>>4;
+  int16_t Y = (int16_t)((buf[1] << 8) | ((buf[4] & 0x0F)<<4))>>4;
+
   // built 14 bit data 
-  int16_t X = (int16_t)((buf[0] << 8) | ((buf[1] & 0x3F) << 2)) >> 2;
-  int16_t Y = (int16_t)((buf[2] << 8) | ((buf[3] & 0x3F) << 2)) >> 2;
+  // int16_t X = (int16_t)((buf[0] << 8) | ((buf[1] & 0x3F) << 2)) >> 2;
+  // int16_t Y = (int16_t)((buf[2] << 8) | ((buf[3] & 0x3F) << 2)) >> 2;
   //int16_t Z = (int16_t)((buf[4] << 8) | ((buf[5] & 0x3F) << 2)) >> 2;
   //uint16_t T = (uint16_t)((buf[6] << 8) | ((buf[7] & 0x3F) << 2)) >> 2;
   //zSign = Z < 0 ? -1 : 1;

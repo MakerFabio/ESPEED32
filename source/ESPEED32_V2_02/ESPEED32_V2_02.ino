@@ -519,7 +519,9 @@ void showScreenWelcome()
   obdWriteString(&g_obd, 0, 16, 12, (char *)"ESPEED32", FONT_12x16, OBD_BLACK, 1);
   sprintf(msgStr, "V%d.%02d", SW_MAJOR_VERSION, SW_MINOR_VERSION);  
   obdWriteString(&g_obd, 0, 34, 28, msgStr, FONT_12x16, OBD_WHITE, 1);
+  obdWriteString(&g_obd, 0, 20, 48, (char *)"TLE493D-W2A0", FONT_8x8, OBD_BLACK, 1);
 }
+
 
 
 /**
