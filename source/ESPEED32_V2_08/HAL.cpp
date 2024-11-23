@@ -1,11 +1,9 @@
-
 /*********************************************************************************************************************/
 /*------------------------------------------------------Includes-----------------------------------------------------*/
 /*********************************************************************************************************************/
 #include "HAL.h"
 #include "slot_ESC.h"
 #include <math.h>
-
 
 #ifdef AS5600_MAG
   #include "AS5600.h"
@@ -32,7 +30,6 @@
 
 void HAL_InitHW()
 {
-  EEPROM.begin(EEPROM_SIZE);
   /* Setup fo the parameters for serial(debug) communication */ 
   Serial.begin(115200);      
 
@@ -40,9 +37,6 @@ void HAL_InitHW()
     as5600.begin(4);                        /* Set direction pin */
     as5600.setDirection(AS5600_CLOCK_WISE); /* Default, just be explicit. */
     int b = as5600.isConnected();
-   // Serial.print("Connect: ");
-   // Serial.println(b);
-   // delay(1000);
 
   #elif defined (MT6701_MAG)
     mt6701.begin(); /* Wire is initialized by the display already, also sensor is using same I2C wires */
@@ -127,11 +121,6 @@ int16_t HAL_ReadTriggerRaw()
   // built 14 bit data 
   int16_t X = (int16_t)((buf[0] << 8) | ((buf[1] & 0x3F) << 2)) >> 2;
   int16_t Y = (int16_t)((buf[2] << 8) | ((buf[3] & 0x3F) << 2)) >> 2;
-  //int16_t Z = (int16_t)((buf[4] << 8) | ((buf[5] & 0x3F) << 2)) >> 2;
-  //uint16_t T = (uint16_t)((buf[6] << 8) | ((buf[7] & 0x3F) << 2)) >> 2;
-  //zSign = Z < 0 ? -1 : 1;
-  //angle10degYZ=570*(atan2(Y*zSign,Z)+1);
-  //retVal = angle10degYZ;
   
   xSign = X < 0 ? -1 : 1;
   angle10degXY=570*(atan2(Y*xSign,X)+1);
@@ -144,7 +133,8 @@ int16_t HAL_ReadTriggerRaw()
 
 void HAL_PinSetup()
 {
-  pinMode(BUZZ_PIN, OUTPUT);      // Set BUZZ_PIN - pin as an output
+  pinMode(BUZZ_PIN, OUTPUT);     // Set BUZZ_PIN pin as an output
+  pinMode(LED_BUILTIN, OUTPUT);  // Set ESP32 LED builtin pin as an output
   pinMode(BUTT_PIN, INPUT_PULLUP);// Set input pushbutton as input with pullup, so oyu con't need external resistor
   pinMode(ENCODER_BUTTON_PIN, INPUT_PULLUP);// Set input pushbutton as input with pullup, so oyu con't need external resistor
   
@@ -174,11 +164,6 @@ uint16_t HAL_ReadVoltageDivider(int AnalogInput, uint32_t rvfbl, uint32_t rvfbh)
 
 void sound(note_t note, int ms)
 {
-  //tone(BUZZ_PIN, freq, ms);
-  /* DEPRECATED 
-  ledcAttachPin(BUZZ_PIN, BUZZ_CHAN);
-  ledcWriteNote(BUZZ_CHAN, note, 7);
-  */
   ledcAttachChannel(BUZZ_PIN, 5000, 8, BUZZ_CHAN);
   ledcWriteNote(BUZZ_PIN, note, 7);
   delay (ms);
@@ -199,7 +184,6 @@ void offSound()
 void onSound()
 { 
   sound(NOTE_C, 30);
-  //delay(20);// pause between each sound
   sound(NOTE_E, 30);
 }
 
@@ -213,7 +197,6 @@ void calibSound()
   delay(60);// pause between each sound
   sound(NOTE_A, 60);  
 }
-
 
 // function keySound: generates key pressed sound
 void keySound()

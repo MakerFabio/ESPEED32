@@ -92,23 +92,22 @@
 #define AN_VIN_DIV   36
 
 /****** ENCODER PIN ******/
-#define ENCODER_A_PIN       16 /* In our encoder is PIN S1 */
-#define ENCODER_B_PIN       17 /* In our encoder is PIN S2 */
-#define ENCODER_BUTTON_PIN  4  /* In our encoder is PIN KEY */
-#define ENCODER_VCC_PIN     -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
-#define ENCODER_STEPS       4
+#define ENCODER_A_PIN      16 /* In our encoder is PIN S1 */
+#define ENCODER_B_PIN      17 /* In our encoder is PIN S2 */
+#define ENCODER_BUTTON_PIN 4  /* In our encoder is PIN KEY */
+#define ENCODER_VCC_PIN    -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
+#define ENCODER_STEPS      4
 
 /* MOTOR CURRENT & BEMF */
 #define AN_MOT_BEMF   14 /* Motor back EMF sensig */
 #define HB_AN_PIN     25
 #define HB_IN_PIN     26 
 #define HB_INH_PIN    27 /* debug place back 27, 2 is the LED */
+#define LED_BUILTIN   2
 
 /******* OTHER PIN *******/
 #define BUTT_PIN   13   /* Button */
-//#define BUZZ_PIN   19 /* Buzzer piezo  minislotESC V2.0 */
 #define BUZZ_PIN   18   /* minislotESC V2.1 /
-//#define APTIC_PIN  19   /* Aptic fedback pin */
 
 /*********************************************************************************************************************/
 /*------------------------------------------------Function Prototypes------------------------------------------------*/

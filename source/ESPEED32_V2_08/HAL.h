@@ -23,12 +23,12 @@
 #define RVIFBH 10000UL   // [Ohm]Vin ADC resistor divider, upper resistor
 
 /********** ADC **********/
-#define THROTTLE_NORMALIZED   256
-#define THROTTLE_DEADBAND_PERC  3  /* [%]percent of throtthe that is considered 100% or 0%, when the wiper is close to the travel edges */
-#define THROTTLE_DEADBAND_NORM  ((THROTTLE_DEADBAND_PERC*THROTTLE_NORMALIZED)/100)
-#define THROTTLE_NOISE_PERC     2
-#define THROTTLE_NOISE_NORM      ((THROTTLE_NOISE_PERC*THROTTLE_NORMALIZED)/100)
-#define DERIVATE_MAX_ACTION_NORM (3*THROTTLE_NOISE_NORM)
+#define THROTTLE_NORMALIZED         256
+#define THROTTLE_DEADBAND_PERC      3  /* [%]percent of throtthe that is considered 100% or 0%, when the wiper is close to the travel edges */
+#define THROTTLE_DEADBAND_NORM      ((THROTTLE_DEADBAND_PERC*THROTTLE_NORMALIZED)/100)
+#define THROTTLE_NOISE_PERC         2
+#define THROTTLE_NOISE_NORM         ((THROTTLE_NOISE_PERC*THROTTLE_NORMALIZED)/100)
+#define DERIVATIVE_MAX_ACTION_NORM  (3*THROTTLE_NOISE_NORM)
 #define ACD_RESOLUTION_STEPS 4095
 
 #define VIN_CAL_SET 1200
@@ -72,7 +72,7 @@
 
 /******** OTHERS *********/
 #define KEY_SOUND_MS      50
-#define BUTT_PRESSED      0
+#define BUTTON_PRESSED    0
 
 /************************************************** PIN DEFINITIONS **************************************************/
 
@@ -92,33 +92,32 @@
 #define AN_VIN_DIV   36
 
 /****** ENCODER PIN ******/
-#define ENCODER_A_PIN       16 /* In our encoder is PIN S1 */
-#define ENCODER_B_PIN       17 /* In our encoder is PIN S2 */
-#define ENCODER_BUTTON_PIN  4  /* In our encoder is PIN KEY */
-#define ENCODER_VCC_PIN     -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
-#define ENCODER_STEPS       4
+#define ENCODER_A_PIN      16 /* In our encoder is PIN S1 */
+#define ENCODER_B_PIN      17 /* In our encoder is PIN S2 */
+#define ENCODER_BUTTON_PIN 4  /* In our encoder is PIN KEY */
+#define ENCODER_VCC_PIN    -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
+#define ENCODER_STEPS      4
 
 /* MOTOR CURRENT & BEMF */
 #define AN_MOT_BEMF   14 /* Motor back EMF sensig */
 #define HB_AN_PIN     25
 #define HB_IN_PIN     26 
 #define HB_INH_PIN    27 /* debug place back 27, 2 is the LED */
+#define LED_BUILTIN   2
 
 /******* OTHER PIN *******/
 #define BUTT_PIN   13   /* Button */
-//#define BUZZ_PIN   19 /* Buzzer piezo  minislotESC V2.0 */
 #define BUZZ_PIN   18   /* minislotESC V2.1 /
-//#define APTIC_PIN  19   /* Aptic fedback pin */
 
 /*********************************************************************************************************************/
 /*------------------------------------------------Function Prototypes------------------------------------------------*/
 /*********************************************************************************************************************/
-uint16_t  HAL_ReadVoltageDivider(int AnalogInput, uint32_t rvfbl, uint32_t rvfbh);
-int16_t   HAL_ReadTriggerRaw();
-void      HAL_InitHW();
-void      HALanalogWrite (int PWMchan, int value);
-void      HAL_PinSetup();
-uint16_t  HAL_AdcRawToPct(uint16_t raw, uint16_t min, uint16_t max, bool reverse);
+void     HAL_InitHW();
+uint16_t HAL_ReadVoltageDivider(int AnalogInput, uint32_t rvfbl, uint32_t rvfbh);
+int16_t  HAL_ReadTriggerRaw();
+void     HALanalogWrite (int PWMchan, int value);
+void     HAL_PinSetup();
+uint16_t HAL_AdcRawToPct(uint16_t raw, uint16_t min, uint16_t max, bool reverse);
 
 void sound(note_t note,int ms);
 void offSound();

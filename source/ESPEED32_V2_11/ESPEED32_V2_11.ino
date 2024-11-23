@@ -10,9 +10,12 @@
 //#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #define CONFIG_BOOTLOADER_LOG_LEVEL ESP_LOG_NONE
 
-#define SW_MAJOR_VERSION 1
-#define SW_MINOR_VERSION 99
-/* Last modified: 15/10/2024 */
+#define SW_MAJOR_VERSION 2
+#define SW_MINOR_VERSION 11
+#define STORED_VAR_VERSION 3 /* tells which version of stored variable is used for thisproject in case the stored var */
+                             /* changes from previous SW release, please increase the STORED_VAR_VERSION by 1         */
+
+/* Last modified: 17/10/2024 */
 /*********************************************************************************************************************/
 /*-------------------------------------------------Global variables--------------------------------------------------*/
 /*********************************************************************************************************************/
@@ -55,7 +58,8 @@ ESC_type g_escVar{
   .trigger_norm = 0,
   .triggerDerivative = 0,
   .encoderPos = 1,
-  .Vin_mV = 0
+  .Vin_mV = 0,
+  .dualCurve = false
 };
 
 /* Main menu global instances */
@@ -130,7 +134,7 @@ void Task1code(void *pvParameters)
     StateMachine_enum prevState = g_currState;  /* Keep track of the state at the previous loop */
     static uint16_t prevFreqPWM = 0;            /* Keep track if the PWM freq has changed */
     static MenuState_enum menuState = ITEM_SELECTION;   /* State of the Main Menu */
-    static uint8_t swMajVer, swMinVer;                  /* SW major and minor version stored in the eeprom */
+    static uint8_t swMajVer, swMinVer, storedVarVersion;/* SW major version, minor version,  storedVariable version stored in the eeprom */
 
     g_escVar.Vin_mV = HAL_ReadVoltageDivider(AN_VIN_DIV, RVIFBL, RVIFBH); /* Read VIN */
 
@@ -145,13 +149,14 @@ void Task1code(void *pvParameters)
 
         g_pref.begin("stored_var", false); /* Open the "stored" namespace in read/write mode. If it doesn't exist, it creates it */
         
-        if (g_pref.isKey("sw_maj_ver") && g_pref.isKey("sw_min_ver") && g_pref.isKey("user_param")) /* If all keys exists, then check their value */
+        if (g_pref.isKey("stored_var_ver") && g_pref.isKey("sw_maj_ver") && g_pref.isKey("sw_min_ver") && g_pref.isKey("user_param")) /* If all keys exists, then check their value */
         {
           /* Get the values of the sw version */
           swMajVer = g_pref.getUChar("sw_maj_ver");
           swMinVer = g_pref.getUChar("sw_min_ver");
+          storedVarVersion = g_pref.getUChar("stored_var_ver");
 
-          if ((swMajVer == SW_MAJOR_VERSION) && (swMinVer == SW_MINOR_VERSION)) /* If both keys are equal to the SW Version MACRO, then the stored param are already initialized */
+          if ((storedVarVersion == STORED_VAR_VERSION) ) /* If the storedVariable version keys is equal to the STORED_VAR MACRO, then the stored param are already initialized woh the proper format*/
           {
             g_pref.getBytes("user_param", &g_storedVar, sizeof(g_storedVar)); /* Get the value of the stored user_param */
             initMenuItems();                                                  /* init menu items with EEPROM stored variables */
@@ -195,11 +200,11 @@ void Task1code(void *pvParameters)
         initDisplayAndEncoder();  /* init and clear OLED and Encoder */
                               
         g_pref.clear();           /* Clear all the keys in this namespace */
-        
-
         /* Store the correct SW version */
         g_pref.putUChar("sw_maj_ver", SW_MAJOR_VERSION);
         g_pref.putUChar("sw_min_ver", SW_MINOR_VERSION);
+        
+        g_pref.putUChar("stored_var_ver", STORED_VAR_VERSION);
 
         initStoredVariables();  /* Initialize stored variables with default values */
 
@@ -227,8 +232,7 @@ void Task1code(void *pvParameters)
         {
           offSound();
           initMenuItems();  /* Init Menu Items */
-          g_pref.putBytes("user_param", &g_storedVar, sizeof(g_storedVar)); /* Put the value of the stored user_param */
-          g_pref.end();                                                     /* Close the namespace */
+          saveEEPROM(g_storedVar);  /* Save modified calibration values to EEPROM */
           HalfBridge_Enable();    /* Enable HalfBridge */
           g_currState = WELCOME;  /* Go to WELCOME state */
         }
@@ -275,7 +279,6 @@ void Task1code(void *pvParameters)
         {
           g_encoderSecondarySelector = g_escVar.encoderPos;         /* If in ITEM_SELECTION, update the encoder SecondaryEncoder with the encoder position */
           *g_encoderSelectedValuePtr = g_encoderSecondarySelector;  /* Also update the value of the selected parameter */
-          //g_storedVar.carParam[g_carSel].throttleCurveVertex.curveSpeedDiff = saturateParamValue(g_storedVar.carParam[g_carSel].throttleCurveVertex.curveSpeedDiff, THROTTLE_CURVE_SPEED_DIFF_MIN_VALUE, THROTTLE_CURVE_SPEED_DIFF_MAX_VALUE); /* Regulate min value for throttle setpoint */
         }
 
         /* Show Main Menu display */
@@ -289,6 +292,10 @@ void Task1code(void *pvParameters)
           ledcAttachChannel(HB_IN_PIN, freqTmp, THR_PWM_RES_BIT, THR_IN_PWM_CHAN);
           ledcAttachChannel(HB_INH_PIN, freqTmp, THR_PWM_RES_BIT, THR_INH_PWM_CHAN);
         }
+        if (g_escVar.outputSpeed_pct == 100) /* indicate 100% throttle also on the internal ESP32 LED*/
+          digitalWrite(LED_BUILTIN, 1);
+        else
+          digitalWrite(LED_BUILTIN, 0);
         break;
 
 
@@ -314,7 +321,7 @@ void Task2code(void *pvParameters) {
   static uint16_t dragBrake_norm, positiveDerivative;                       /* Used to calculate drag brake                  */
   static unsigned long prevCallTime_uS = 0, deltaTime_uS, currCallTime_uS;  /* Used to keep track of time between executions */
   static unsigned long currTrigger_raw = 0, prevTrigger_raw = 0;            /* Used to keep track of current and previous trigger readings */
-  
+
   HalfBridge_Enable();  /* TODO: verify if needed */
 
   for (;;) 
@@ -324,29 +331,35 @@ void Task2code(void *pvParameters) {
     
     if (deltaTime_uS > ESC_PERIOD_US) /* This condition ensure that the following code is executed every ESC_PERIOD_US */
     {
+      prevCallTime_uS = currCallTime_uS;                              /* update last call static memory */
+
+      /* Trigger reading and first conditioning (filtering, normalize, deadband) */
       prevTrigger_raw = currTrigger_raw;
       currTrigger_raw = HAL_ReadTriggerRaw();  /* Read raw trigger value */
-      g_escVar.trigger_raw = (prevTrigger_raw + currTrigger_raw) / 2;   /* Take the average between current and previous trigger readings --> attenuate disturbs */
-      prevCallTime_uS = currCallTime_uS;                              /* update last call static memory */
+      g_escVar.trigger_raw  = (prevTrigger_raw + currTrigger_raw) / 2;   /* Take the average between current and previous trigger readings --> attenuate disturbs */
+      g_escVar.trigger_norm = normalizeAndClamp(g_escVar.trigger_raw, g_storedVar.minTrigger_raw, g_storedVar.maxTrigger_raw, THROTTLE_NORMALIZED, THROTTLE_REV);  /* Get Raw trigger position and return throttle between 0 and THROTTLE_NORMALIZED */
+      g_escVar.trigger_norm = addDeadBand(g_escVar.trigger_norm, 0, THROTTLE_NORMALIZED, THROTTLE_DEADBAND_NORM); /* Account for deadband */
+      
+      /* Check isf allowed to provide power  to the motor*/
       if (!(g_currState == CALIBRATION || g_currState == INIT))           /* Do not apply power if in calibration or before initialization (TODO: would be better to have also variables init) */
       {
-        /* Throttle -> Speed pipeline , perform time dependent adjustment */
-        g_escVar.trigger_norm = normalizeAndClamp(g_escVar.trigger_raw, g_storedVar.minTrigger_raw, g_storedVar.maxTrigger_raw, THROTTLE_NORMALIZED, THROTTLE_REV);  /* Get Raw trigger position and return throttle between 0 and THROTTLE_NORMALIZED */
-        g_escVar.trigger_norm = addDeadBand(g_escVar.trigger_norm, 0, THROTTLE_NORMALIZED, THROTTLE_DEADBAND_NORM); /* Account for deadband */
-        g_escVar.triggerDerivative = computeTriggerDerivativeGPT(g_escVar.trigger_norm);    /* Compute trigger derivative */
-        g_escVar.outputSpeed_pct = throttleCurve(g_escVar.trigger_norm);                    /* Map trigger(throttle) to speed (duty) */
-        g_escVar.outputSpeed_pct = throttleAntiSpin(g_escVar.outputSpeed_pct);              /* Define actual speed output (apply antispin) */
-
-        if (g_escVar.outputSpeed_pct == 0)                                /* If the requested speed is 0 */
+        if (g_escVar.trigger_norm == 0)                                   /* If the trigger is at 0 */
         {
-          HalfBridge_SetPwmDrag(0, g_storedVar.carParam[g_carSel].brake);  /* Apply brake only (and speed to 0) in case speed set is 0 */
-          dragBrake_norm = 0;                                           /* Set also dragBrake_norm to 0 just to look nicer on the display */
+          HalfBridge_SetPwmDrag(0, g_storedVar.carParam[g_carSel].brake); /* Apply brake only (and speed to 0) in case speed set is 0 */
+          dragBrake_norm = 0;                                             /* Set also dragBrake_norm to 0 just to look nicer on the display */
+          g_escVar.outputSpeed_pct=0; // set outputSpeed_pct to 0 so the ramp starts from a 0 value after a brake
+          throttleAntiSpin3(0);       // keep on calling antispin with 0 as input to keep ramp delta time updated
+          g_escVar.triggerDerivative = computeTriggerDerivative(g_escVar.trigger_norm);// keep on calling derivative to have it update
         }
-        else                                                            /* If the requested speed is > 0 */
+        else                                                              /* If the requested speed is > 0 */
         {
-          positiveDerivative = constrain(-g_escVar.triggerDerivative, 0, MAX_UINT16);   /* TODO: verify if the "-" before triggerDerivative is related to REV_THROTTLE */
-          dragBrake_norm = normalizeAndClamp(positiveDerivative, 0, DERIVATIVE_MAX_ACTION_NORM, g_storedVar.carParam[g_carSel].dragBrake, 0);  /* Calculate dragBrake proportional to the derivative and the dragBrake parameter */
-          HalfBridge_SetPwmDrag(g_escVar.outputSpeed_pct, dragBrake_norm);  /* Apply output speed (duty) and drag brake */
+          /* Throttle -> Speed pipeline , perform time dependent adjustment */
+          g_escVar.triggerDerivative = computeTriggerDerivative(g_escVar.trigger_norm); /* Compute trigger derivative */
+          positiveDerivative         = constrain(-g_escVar.triggerDerivative, 0, MAX_UINT16);   /* Keep only the negative derivate amount, and inver its sign */
+          dragBrake_norm             = normalizeAndClamp(positiveDerivative, 0, DERIVATIVE_MAX_ACTION_NORM, g_storedVar.carParam[g_carSel].dragBrake, 0);  /* Calculate dragBrake proportional to the derivative and the dragBrake parameter */
+          g_escVar.outputSpeed_pct   = throttleCurve2(g_escVar.trigger_norm, positiveDerivative, dragBrake_norm );   /* Map trigger(throttle) to speed (duty) */
+          g_escVar.outputSpeed_pct   = throttleAntiSpin3(g_escVar.outputSpeed_pct); /* Define actual speed output (apply antispin) */
+          HalfBridge_SetPwmDrag(g_escVar.outputSpeed_pct, dragBrake_norm);         /* Apply output speed (duty) and drag brake */
         }
       }
     }
@@ -656,65 +669,110 @@ void printMainMenu(MenuState_enum currMenuState)
   /* Trigger derivative */
   sprintf(msgStr, "%3d ", g_escVar.triggerDerivative);
   obdWriteString(&g_obd, 0, 4 * WIDTH8x8, 3 * HEIGHT12x16 + HEIGHT8x8, msgStr, FONT_6x8, OBD_BLACK, 1);
-    /* Current voltaqge */
+  /* Current voltage */
   sprintf(msgStr, " %d.%01dV ", g_escVar.Vin_mV / 1000, (g_escVar.Vin_mV % 1000) / 100);
   obdWriteString(&g_obd, 0, 7 * WIDTH8x8, 3 * HEIGHT12x16 + HEIGHT8x8, msgStr, FONT_6x8, OBD_BLACK, 1);
 
-  /* Debug line, unused
-  sprintf(msgStr, " %d   ", debug);
-  obdWriteString(&g_obd, 0, 12 * WIDTH8x8, 3 * HEIGHT12x16 + HEIGHT8x8, msgStr, FONT_6x8, OBD_BLACK, 1);
-  */
+  /* Show with a D if Drag Brake is higher than 100%-minSpeed forcing a dual curve when decelerating */
+ if (g_storedVar.carParam[g_carSel].dragBrake > 100 - (uint16_t)g_storedVar.carParam[g_carSel].minSpeed )
+ {  
+    g_escVar.dualCurve = true; // indicates a differnt curve is set when decelerating with high drag brake
+    sprintf(msgStr, "D", debug);
+    obdWriteString(&g_obd, 0, 12 * WIDTH8x8, 3 * HEIGHT12x16 + HEIGHT8x8, msgStr, FONT_6x8, OBD_BLACK, 1);
+ }
+ else/* delete the D if there is not a dual curve */
+ {
+    g_escVar.dualCurve = false;
+    sprintf(msgStr, " ", debug);
+    obdWriteString(&g_obd, 0, 12 * WIDTH8x8, 3 * HEIGHT12x16 + HEIGHT8x8, msgStr, FONT_6x8, OBD_BLACK, 1);
+ }
 }
 
+uint16_t gammaCorrect(uint16_t value, float gamma) {
+  float normalizedValue = (float)value / 1000.0f;
+  float correctedValue = powf(normalizedValue, gamma);
+  return (uint16_t)(correctedValue * 1000.0f);
+}
 
-/**
- * Apply antispin calculation (according to antispin settings) to a requested output speed.
- * 
+#define ANTIS_SPEED_START_MIN 30 /*start anntispin only for throttle requests above ANTISPIN_PERC_START% */
+#define ANTIS_SPEED_START_MAX 70 /*start antispin only for throttle requests above ANTISPIN_PERC_START% */
+ /**
+ * Apply antispin calculation (according to antispin settings) applying a ramp to the output speed to prevent car drift
+ * Antispin func. is called every 0,5ms. Input parameter is the requested Speed, which ranges from MinSPeed to MaxSPeed. 
+ * the output is following the input (from MinSpeed to MaxSpeed), but with a maximum variation/time, so that if a step is applie at the input, 
+ * the output will produce a rampm till the final value.
+ * The antispin time is the time taken from minSpeed to MaxSpeed, selected by the user in the global  variable g_storedVar.carParam[g_carSel].antiSpin in [ms]
+ * Of course, the ramp time is proportional to the output swing amount. therefore if the requested speed step is only MaxSPeed/2 then 
+ * also the ramp time is Antispin/2
+ * Motor current is too low at low duty (30-50%), this is not producing spinning for sure. In addition, when starting from stop it is so useful to rise the motor 
+ * current quickly to have good acceleration. Therefore the antispin is applied from requested speed values above antispinPercStart.
+ * AntispinPercStart has some variations too, it is not a fixed 40% value for instance, but it vary with the carParam[g_carSel].antiSpin user parameter
+ * if the carParam[g_carSel].antiSpin setting is very high E.G. 200ms (powerful motor or slippery track), so also the antispinPercStart is low too 
+ * if the carParam[g_carSel].antiSpin set is low, the traction is good, so antispinPercStart should be high, 
  * @param requestedSpeed [%] The requested outputSpeed at the end of the throttle -> speed pipeline
  * @return [%] The output speed closer to the requestedSpeed that respect the Antispin settings.
  */
-uint16_t throttleAntiSpin(uint16_t requestedSpeed) 
+uint16_t throttleAntiSpin3(uint16_t requestedSpeed) 
 {
   static uint32_t lastOutputSpeedx1000 = 0, maxDeltaSpeedx1000, outputSpeedX1000;   /* To keep track of output speeds, in a larger scale to increase granularity */
   static unsigned long prevCall_uS = 0, deltaTime_uS, currCall_uS;    /* To keep track of time between executions */
-  uint32_t outputSpeed;     
+  uint32_t outputSpeed;  
+  uint16_t antispinPercStart,minSpeedTmp;/* level at which the antispin starts to be effective (at lower trigger is just bypassed) */    
 
   currCall_uS = micros();                     /* Get current time in uS */
   deltaTime_uS = currCall_uS - prevCall_uS;   /* Get delta time from last call of this function */
   prevCall_uS = currCall_uS;                  /* Update last call static memory */
 
+  /* map(long x, long in_min, long in_max, long out_min, long out_max) */
+  antispinPercStart = map( (long)g_storedVar.carParam[g_carSel].antiSpin, 0 , (long)ANTISPIN_MAX_VALUE, (long)ANTIS_SPEED_START_MAX, (long)ANTIS_SPEED_START_MIN );
+  
+
   /* Bypass calculation if antiSpin is 0 (OFF) and just return requestedSpeed */
   if ((g_storedVar.carParam[g_carSel].antiSpin) == 0) 
   {
     outputSpeed = requestedSpeed;
+    lastOutputSpeedx1000 = g_storedVar.carParam[g_carSel].minSpeed; // keep last output speed to minspeed, so at next start I can 
   } 
   else 
   {
-    maxDeltaSpeedx1000 = ((g_storedVar.carParam[g_carSel].maxSpeed - g_storedVar.carParam[g_carSel].minSpeed) * (deltaTime_uS)) / (g_storedVar.carParam[g_carSel].antiSpin);  /* deltaSpeed = ((minSPeed-MaxSpeed)* DeltaTime) / antiSpin (from min speed to max speed) */
-
-    if ((uint32_t)requestedSpeed * 1000 <= lastOutputSpeedx1000)  /* If current requestSpeed is less than previous output speed (car braking/slowing) do it immediately */
+    if (requestedSpeed < antispinPercStart) /* if requested speed(duty) is low do not apply antispin, current will be low for sure, so just pass the value */
     {
-      outputSpeed = requestedSpeed;
+      outputSpeed = requestedSpeed ;
       lastOutputSpeedx1000 = outputSpeed * 1000;
-    } 
-    else /* Requested speed is increasing (Car is accelerating) */
+    }
+    else
     {
-      if (lastOutputSpeedx1000 < ((uint32_t)requestedSpeed * 1000 - maxDeltaSpeedx1000))  /* Check there is room to increase speed by a maxdeltaspeed */
+      if ((uint32_t)requestedSpeed * 1000 <= lastOutputSpeedx1000)  /* If requestSpeed is decreasing (car braking/slowing) => apply new speed immediately */
       {
-        outputSpeedX1000 = (lastOutputSpeedx1000 + maxDeltaSpeedx1000);
+        outputSpeed = requestedSpeed;
+        lastOutputSpeedx1000 = outputSpeed * 1000;
       } 
-      else 
+      else /* Requested speed is increasing (Car is accelerating) here apply antispin */
       {
-        outputSpeedX1000 = requestedSpeed * 1000;
-      }
+        /* minspeed could be overrided by the antispinPercStart, so keep the highest */
+        minSpeedTmp = max((uint16_t)g_storedVar.carParam[g_carSel].minSpeed, antispinPercStart);
+        /* calculate max delta speed  deltaSpeed = ((minSPeedTmp-MaxSpeed)* DeltaTime) / antiSpin (from min speed to max speed) */
+        maxDeltaSpeedx1000 = ((g_storedVar.carParam[g_carSel].maxSpeed - minSpeedTmp  ) * (deltaTime_uS)) / (g_storedVar.carParam[g_carSel].antiSpin);  
+        
+        /* Check if there is room to increase the lastOutputSpeed by a maxdeltaspeed or if the speed is too close to the requested speed*/
+        if (lastOutputSpeedx1000 < ((uint32_t)requestedSpeed * 1000 - maxDeltaSpeedx1000))  
+        {
+          outputSpeedX1000 = (lastOutputSpeedx1000 + maxDeltaSpeedx1000);
+        } 
+        else // we arrived at the target, so just assign the requested speed
+        {
+          outputSpeedX1000 = requestedSpeed * 1000;
+        }
+        
+        /* check in order to start the ramp from minspeed (and not from 0) */
+        if (outputSpeedX1000 < g_storedVar.carParam[g_carSel].minSpeed * 1000)  
+        {
+          outputSpeedX1000 = g_storedVar.carParam[g_carSel].minSpeed * 1000;
+        }
 
-      if (outputSpeedX1000 < g_storedVar.carParam[g_carSel].minSpeed * 1000)  /* check in order to start the ramp from minspeed (and not from 0) */
-      {
-        outputSpeedX1000 = g_storedVar.carParam[g_carSel].minSpeed * 1000;
+        lastOutputSpeedx1000 = outputSpeedX1000;  /* save latest outspeed, so next iteration of this function can have only the defined delta */
+        outputSpeed = outputSpeedX1000 / 1000;
       }
-
-      lastOutputSpeedx1000 = outputSpeedX1000;  /* save latest outspeed, so next iteration of this function can have only the defined delta */
-      outputSpeed = outputSpeedX1000 / 1000;
     }
   }
 
@@ -756,33 +814,43 @@ uint16_t addDeadBand(uint16_t inputVal, uint16_t minVal, uint16_t maxVal, uint16
   return retVal;
 }
 
-
 /**
- * Apply the throttle curve (defined by the curve vertex) to an input throttle.
- * 
- * @param inputThrottle The input throttle, normalized (ranges from 0 to THROTTLE_NORMALIZED)
- * @return The corresponding output speed [%] (duty cycle) according to the throttle curve.
+ * throttleCurve2: Map trigger position(throttle) to speed (duty) on a broken line curve, with midpoint set as throttleCurveVertex
+ * dual throttle curve: When decelerating , if dragB is higher than 100%-minSpeed, then set a lower minSpeed
+ * @param inputThrottleNorm The input Trigger value, normalized between 0 and THROTTLE_NORMALIZED
+ * @param positiveDerivative thrigger position derivate , only the positive part
+ * @param dragBrake_norm Normalized drag brake
+ * @return duty cyle to be applied at that specific thrigger position on the selected curve
  */
-uint16_t throttleCurve(uint16_t inputThrottle)
+uint16_t throttleCurve2(uint16_t inputThrottleNorm ,uint16_t positiveDerivative, uint16_t dragBrake_norm)
 {
   uint16_t outputSpeed = 0;           /* The requested output speed (duty cycle) from 0% to 100% */
   uint32_t throttleCurveVertexSpeed;  /* The output speed when the throttle is at 50% (that is, the value of throttleCurveVertex.inputThrottle) */
+  uint16_t tmpMinSpeed;               /* Minimum speed may change when decelerating due to drag brake, so create a temporary min speed */
+
+  /* dual throttle curve: When decelerating , if dragB is higher than 100%-minSpeed, then set a lower minSpeed on the curve to allow the desired drag brake to be applied*/
+  if (positiveDerivative > THROTTLE_NOISE_NORM)
+  {                                            /* otherwise the maximum applicable drag would be 100%-minSpeed (which is low if minSpeed is set to 40% for instance)      */
+    tmpMinSpeed = min( (uint16_t)(100-dragBrake_norm), (uint16_t)g_storedVar.carParam[g_carSel].minSpeed );
+  } 
+  else /* when not decelerating (steady throttle or accelerating)apply prameter minSpeed for the curve*/
+    tmpMinSpeed = g_storedVar.carParam[g_carSel].minSpeed;
 
   /* Calculate the output speed of the throttle curve vertex
      This is calculated as the curveSpeedDiff (from 10% to 90%) percentage of the difference between minSpeed and maxSpeed */
-  throttleCurveVertexSpeed = g_storedVar.carParam[g_carSel].minSpeed + (((uint32_t)g_storedVar.carParam[g_carSel].maxSpeed - (uint32_t)g_storedVar.carParam[g_carSel].minSpeed) * ((uint32_t)g_storedVar.carParam[g_carSel].throttleCurveVertex.curveSpeedDiff) / 100);
+  throttleCurveVertexSpeed = tmpMinSpeed + (((uint32_t)g_storedVar.carParam[g_carSel].maxSpeed - (uint32_t)tmpMinSpeed) * ((uint32_t)g_storedVar.carParam[g_carSel].throttleCurveVertex.curveSpeedDiff) / 100);
 
-  if (inputThrottle == 0)   /* If input throttle is 0 --> output speed is 0% */
+  if (inputThrottleNorm == 0)   /* If input throttle is 0 --> output speed is 0% */
   {
     outputSpeed = 0;
   } 
-  else if (inputThrottle <= g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle) /* If the input throttle is less than the vertex point (fixed at 50%), than map the output speed from 0 to the throttleCurveVertexSpeed */
+  else if (inputThrottleNorm <= g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle) /* If the input throttle is less than the vertex point (fixed at 50%), than map the output speed from 0 to the throttleCurveVertexSpeed */
   {
-    outputSpeed = map(inputThrottle, 0, g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle, g_storedVar.carParam[g_carSel].minSpeed, throttleCurveVertexSpeed);
+    outputSpeed = map(inputThrottleNorm, 0, g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle, tmpMinSpeed, throttleCurveVertexSpeed);
   } 
   else  /* If the input throttle is more than the vertex point (fixed at 50%), than map the output speed from throttleCurveVertexSpeed to the maxSpeed*/
   {
-    outputSpeed = map(inputThrottle, g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle, THROTTLE_NORMALIZED, throttleCurveVertexSpeed, g_storedVar.carParam[g_carSel].maxSpeed);
+    outputSpeed = map(inputThrottleNorm, g_storedVar.carParam[g_carSel].throttleCurveVertex.inputThrottle, THROTTLE_NORMALIZED, throttleCurveVertexSpeed, g_storedVar.carParam[g_carSel].maxSpeed);
   }
 
   return outputSpeed;
@@ -926,21 +994,6 @@ void showCarSelection() {
   /* Reset encoder and clear is done in caller routine */
   return;
 }
-
-
-/* Deprecated --> now save is done automatically upon parameter change 
-void showSaveCar() {
-  saveEEPROM(g_storedVar);
-  
-  g_rotaryEncoder.setAcceleration(MENU_ACCELERATION);
-  g_rotaryEncoder.setBoundaries(1, MENU_ITEMS_COUNT, false);
-  g_rotaryEncoder.reset(g_encoderMainSelector);
-  g_escVar.encoderPos = g_encoderMainSelector;
-  
-  obdFill(&g_obd, OBD_WHITE, 1);
-  return;
-}
-*/
 
 
 /**
@@ -1217,7 +1270,6 @@ void showCurveSelection()
 }
 
 
-
 /**
  * Take an ADC raw value where the max and min has been recorded and returns the value scaled
  * 
@@ -1262,7 +1314,7 @@ uint16_t normalizeAndClamp(uint16_t raw, uint16_t minIn, uint16_t maxIn, uint16_
  * @param currTrigger The current trigger value
  * @return The derivative of the trigger as difference between current trigger and rolling average of previous trigger values.
  */
-int16_t computeTriggerDerivativeGPT(uint16_t currTrigger) {
+int16_t computeTriggerDerivative(uint16_t currTrigger) {
   static uint16_t valueBuffer[TRIG_AVG_COUNT] = { 0 };  /* Buffer to store the last 100 values    */
   static uint8_t bufferIndex = 0;                       /* Index for the circular buffer          */
   static uint32_t sum = 0;                              /* Sum of the values in the buffer        */

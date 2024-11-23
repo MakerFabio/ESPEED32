@@ -52,7 +52,7 @@
 #define TIMER_FREQ          1000000 /* frequency of the timer interrupt in Hz (1MHz)*/
 #define ESC_PERIOD_US       500     /* Period of the ESC alarm in microseconds */
 
-#define CAR_MAX_COUNT       5 /* How many different car model setting can be stored */
+#define CAR_MAX_COUNT       10 /* How many different car model setting can be stored */
 #define CAR_NAME_MAX_SIZE   5 /* 4 char + terminator \0 */
 
 #define CAR_OPTION_SELECT   0
@@ -67,7 +67,7 @@
 #define DRAG_BRAKE_T_FULL     0
 #define DRAG_BRAKE_T_DEC      1
 
-#define TRIG_AVG_TIME_ms 30
+#define TRIG_AVG_TIME_ms 25
 #define TRIG_AVG_COUNT (TRIG_AVG_TIME_ms * 1000 / (ESC_PERIOD_US))
 /*********************************************************************************************************************/
 /*-------------------------------------------------Data Structures---------------------------------------------------*/
@@ -151,9 +151,10 @@ typedef struct {
   uint16_t  outputSpeed_pct;  /* [%] Output speed (duty cycle) obtained after the throttle -> speed pipeline */
   int16_t   trigger_raw;      /* [raw] trigger reading */
   uint16_t  trigger_norm;     /* Trigger value, normalized between 0 and THROTTLE_NORMALIZED, to increase granularity */
-  int16_t   triggerDerivative;  /* Trigger derivative, absolute number */ 
+  int16_t   triggerDerivative;/* Trigger derivative, absolute number */ 
   uint16_t  encoderPos;       /* Current encoder value */
   uint16_t  Vin_mV;           /* [mV] Voltage */
+  bool      dualCurve;        /* dragBrake set higher than 100%-minSpeed so deceleration curve is diferent from accel*/
 } ESC_type;
 
 
