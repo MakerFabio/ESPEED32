@@ -1,9 +1,0 @@
-Removed Pin From Net: NetName=GND Pin=R17-1
-Removed Pin From Net: NetName=3V3 Pin=U4-1
-Removed Pin From Net: NetName=3V3 Pin=U4-2
-Removed Pin From Net: NetName=GND Pin=U4-4
-Removed Pin From Net: NetName=SDA Pin=U4-6
-Removed Pin From Net: NetName=SCL Pin=U4-7
-Removed Pin From Net: NetName=GND Pin=U4-8
-Removed Member From Class: ClassName=ESPEED32_V03 Member=R17
-Removed Member From Class: ClassName=ESPEED32_V03 Member=U4
