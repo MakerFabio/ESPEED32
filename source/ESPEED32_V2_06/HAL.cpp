@@ -17,7 +17,12 @@
   #include "MT6701.hpp"
   MT6701 mt6701; // magnetic sensor, install MT6701 library by Noran Raskin
 
-#elif defined (TLE493D_MAG)
+#elif defined (TLE493D_P3B6_A0)
+  #define ADDRESS 0x5D              // TLE493D-P3B6 A0 variant I2C address
+  #define CONFIG_REG 0x0A           // Configuration register for P3B6 A0
+  #include <Wire.h>
+
+#elif defined (TLE493D_W2B6_A3)
   #define ADDRESS 0x44              // TLE493D-W2B6 A3 variant I2C address
   #define MOD1_REG 0x11             // MOD1 register address for A3 variant
   #define MOD1_CONFIG 0b11110111    // 7-byte read mode, fast mode, low power disabled
@@ -34,7 +39,14 @@ void HAL_InitHW()
   /* Setup fo the parameters for serial(debug) communication */ 
   Serial.begin(115200);   // debug restore me 
 
-#ifdef TLE493D_MAG
+#if defined (TLE493D_P3B6_A0)
+  Wire1.begin(SDA0_PIN, SCL0_PIN, 1000000L);
+  Wire1.beginTransmission(ADDRESS);
+  Wire1.write(CONFIG_REG);
+  Wire1.write(0xC6);
+  Wire1.write(0x02);
+  Wire1.endTransmission();
+#elif defined (TLE493D_W2B6_A3)
   Wire1.begin(SDA0_PIN, SCL0_PIN, 100000L); // DEbug added for secon I2C
   delay(100); // wait for I2C to stabilize
   
@@ -100,7 +112,23 @@ int16_t HAL_ReadTriggerRaw()
   #elif defined (ANALOG_TRIG)
     retVal = analogRead(AN_THROT_PIN);  // keep an analog pin aslso as backup, if I2C magnetic is not going
 
-  #elif defined (TLE493D_MAG)
+  #elif defined (TLE493D_P3B6_A0)
+    uint8_t buf[4];
+    
+    Wire1.requestFrom(ADDRESS, 4);
+    for (uint8_t i = 0; i < 4; i++) {
+      buf[i] = Wire1.read();
+    }
+    
+    // Build 14-bit data for P3B6 A0
+    int16_t X = (int16_t)((buf[0] << 8) | ((buf[1] & 0x3F) << 2)) >> 2;
+    int16_t Y = (int16_t)((buf[2] << 8) | ((buf[3] & 0x3F) << 2)) >> 2;
+    
+    int16_t xSign = X < 0 ? -1 : 1;
+    int16_t angle10degXY = 570 * (atan2(Y * xSign, X) + 1);
+    retVal = angle10degXY;
+
+  #elif defined (TLE493D_W2B6_A3)
     byte data[7];
     
     Wire1.requestFrom(ADDRESS, 7);
