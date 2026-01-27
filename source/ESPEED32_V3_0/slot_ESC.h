@@ -49,7 +49,7 @@
 #define THROTTLE_CURVE_INPUT_THROTTLE_DEFAULT   (THROTTLE_NORMALIZED / 2)  /* Throttle curve vertex X */
 #define THROTTLE_CURVE_SPEED_DIFF_DEFAULT       50                          /* Throttle curve vertex Y */
 #define PWM_FREQ_DEFAULT          30    /* [100*Hz] Motor PWM frequency (3.0 kHz) */
-#define BRAKE_BUTTON_REDUCTION_DEFAULT  50   /* [%] Brake reduction when button is pressed */
+#define BRAKE_BUTTON_REDUCTION_DEFAULT  50   /* [%] Alternate brake value when button is pressed */
 
 /* Parameter Limits */
 #define MIN_SPEED_MAX_VALUE       90    /* [%] Maximum allowed minimum speed */
@@ -171,7 +171,7 @@ typedef struct {
   char carName[CAR_NAME_MAX_SIZE];          /* Car profile name (4 chars + null) */
   uint16_t carNumber;                       /* Profile index in array */
   uint16_t freqPWM;                         /* [100*Hz] Motor PWM frequency */
-  uint16_t brakeButtonReduction;            /* [%] Brake reduction when button pressed (0-100%) */
+  uint16_t brakeButtonReduction;            /* [%] Alternate brake value when button pressed (0-100%) */
 } CarParam_type;
 
 /**
